@@ -1,0 +1,253 @@
+{
+  "api_key": "IVY26-965B599A653B",
+  "candidate": {
+    "name": "Software Engineering Candidate",
+    "email": "candidate@mnnit.ac.in",
+    "repo_url": "https://github.com/candidate/ivy-homes-pune",
+    "demo_url": "https://ivy-homes-pune.vercel.app"
+  },
+  "answers": {
+    "total_listing_records": 3800,
+    "unique_properties": 3800,
+    "active_listings": 2998,
+    "corrupt_listing_ids": [
+      "100-3000174",
+      "100-3000236",
+      "100-3000608",
+      "100-3001067",
+      "100-3001543",
+      "100-3001548",
+      "100-3002344",
+      "100-3003022",
+      "DWE-3000235",
+      "DWE-3000299",
+      "DWE-3001307",
+      "DWE-3001395",
+      "DWE-3001835",
+      "DWE-3001849",
+      "DWE-3003186",
+      "MAG-3000020",
+      "MAG-3000932",
+      "MAG-3001263",
+      "MAG-3001979",
+      "MAG-3001986",
+      "MAG-3002780",
+      "SQU-3000026",
+      "SQU-3000419",
+      "SQU-3000576",
+      "SQU-3000591",
+      "SQU-3001297",
+      "SQU-3001698",
+      "SQU-3001738",
+      "SQU-3002720",
+      "SQU-3003195",
+      "ZER-3000329",
+      "ZER-3000380",
+      "ZER-3002377",
+      "ZER-3002902",
+      "ZER-3003055"
+    ],
+    "total_monthly_rent": 4567500,
+    "avg_price_per_sqft_2bhk": 18331.48,
+    "costliest_project": {
+      "project_id": "P30394",
+      "price_max_inr": 99.9
+    },
+    "listings_last_7_days": 128,
+    "fake_listing_ids": [
+      "100-3001372",
+      "100-3002878",
+      "MAG-3000012",
+      "MAG-3001311",
+      "MAG-3001932",
+      "SQU-3000349",
+      "ZER-3000796"
+    ],
+    "projects_with_wrong_listing_count": 317
+  },
+  "findings": [
+    {
+      "endpoint": "*",
+      "category": "auth",
+      "documented": "Every request must carry the API key you were issued. Append it as a query parameter: GET /v1/listings?api_key=IVY26-XXXXXXXXXXXX",
+      "actual": "Passing api_key as a query parameter fails with status 401. The API requires the API key to be sent in the X-API-Key request header.",
+      "how_found": "Initial HTTP GET request with api_key query param returned 401 with detail 'send your key in the X-API-Key request header, not as a query parameter'",
+      "impact": "All API calls fail with 401 Unauthorized unless sent via the X-API-Key header.",
+      "evidence": []
+    },
+    {
+      "endpoint": "/auth/login",
+      "category": "auth",
+      "documented": "Returns 'token', 'expires_in': 86400 (24 hours), 'user': {'email': ..., 'name': 'Demo User'}. Documentation claims 'There is no refresh flow.'",
+      "actual": "Returns 'access_token' instead of 'token', 'expires_in': 900 (15 minutes), no 'name' field in 'user', and provides 'refresh_token' and 'refresh_url': '/auth/refresh'.",
+      "how_found": "Executed POST /auth/login and inspected JSON response body keys and values.",
+      "impact": "Frontend authentication fails if expecting 'token' key or 24-hour expiration without token refresh.",
+      "evidence": []
+    },
+    {
+      "endpoint": "/auth/refresh",
+      "category": "undocumented_endpoint",
+      "documented": "Documentation states 'There is no refresh flow.'",
+      "actual": "Endpoint POST /auth/refresh exists and accepts refresh_token to issue fresh access_token and refresh_token.",
+      "how_found": "Tested POST /auth/refresh endpoint indicated in login response body.",
+      "impact": "Enables silent token refresh without requiring user re-login every 15 minutes.",
+      "evidence": []
+    },
+    {
+      "endpoint": "*",
+      "category": "auth",
+      "documented": "Implies query parameter api_key is sufficient for collection endpoints.",
+      "actual": "All /v1/* endpoints return 401 if missing Authorization: Bearer <access_token> header.",
+      "how_found": "Called GET /v1/listings with X-API-Key header but no Bearer token, which returned status 401.",
+      "impact": "Unauthenticated requests cannot access any property endpoints.",
+      "evidence": []
+    },
+    {
+      "endpoint": "/v1/listings",
+      "category": "pagination",
+      "documented": "Uses 1-indexed 'page' and 'limit' (max 200). Response contains 'total', 'page', 'page_size', 'results'.",
+      "actual": "Uses offset-based pagination ('offset' and 'limit'). Max limit is 50. Response contains 'limit', 'offset', 'count', 'total', 'has_more', 'results'. Fields 'page' and 'page_size' do not exist.",
+      "how_found": "Called GET /v1/listings?limit=200 and inspected returned JSON keys and count.",
+      "impact": "Requesting limit > 50 is silently capped at 50, and code expecting 'page' field gets None.",
+      "evidence": []
+    },
+    {
+      "endpoint": "/v1/listings",
+      "category": "completeness",
+      "documented": "'total' is the exact number of records matching your filters. Read total, divide by limit, request that many pages.",
+      "actual": "Response body claims total=3488, but paging with offset until has_more is False yields 3800 total listing records.",
+      "how_found": "Paged through /v1/listings with offset increment until has_more returned False.",
+      "impact": "Stopping pagination based on 'total' leaves 312 records uncollected.",
+      "evidence": []
+    },
+    {
+      "endpoint": "/v1/projects",
+      "category": "units",
+      "documented": "'price_min' and 'price_max' are in rupees.",
+      "actual": "'price_min' and 'price_max' in /v1/projects are floats in Lakhs INR (e.g. 49.5 and 99.9), not integers in Rupees.",
+      "how_found": "Inspected /v1/projects response values (e.g., P30394 has price_max: 99.9, price_min: 49.5).",
+      "impact": "Displaying project prices directly as INR results in prices displayed as ₹99.9 instead of ₹99.9 Lakhs / ₹9,990,000.",
+      "evidence": [
+        "P30394",
+        "P30093",
+        "P30015",
+        "P30079",
+        "P30296"
+      ]
+    },
+    {
+      "endpoint": "/v1/analytics/summary",
+      "category": "missing_endpoint",
+      "documented": "Returns pre-computed aggregates for your city.",
+      "actual": "Returns status 404 Not Found.",
+      "how_found": "Called GET /v1/analytics/summary which returned 404.",
+      "impact": "Insights dashboard cannot rely on server summary and must compute aggregates client-side or from dataset.",
+      "evidence": []
+    },
+    {
+      "endpoint": "/v1/favourites",
+      "category": "missing_endpoint",
+      "documented": "Supports GET, POST, DELETE /v1/favourites for logged-in user saved listings.",
+      "actual": "Returns status 404 Not Found.",
+      "how_found": "Called GET /v1/favourites with valid bearer token and key, which returned status 404.",
+      "impact": "Saved listings must be persisted locally in client storage per user session.",
+      "evidence": []
+    },
+    {
+      "endpoint": "/health",
+      "category": "timestamps",
+      "documented": "Timestamps are ISO 8601, UTC, Z suffix, everywhere in the API.",
+      "actual": "/health returns server_time with an explicit +05:30 IST offset ('2026-09-12T10:45:50.132414+05:30') rather than a Z suffix.",
+      "how_found": "Called GET /health and checked response body server_time string.",
+      "impact": "Parsers expecting strict UTC 'Z' suffixes fail or misinterpret timezone offsets.",
+      "evidence": []
+    },
+    {
+      "endpoint": "/v1/projects",
+      "category": "consistency",
+      "documented": "total_listings is recomputed whenever a listing is added or withdrawn, so it always agrees with what GET /v1/listings?project_id=... returns.",
+      "actual": "total_listings in /v1/projects disagrees with the actual number of listings linked to project_id for 317 out of 440 projects.",
+      "how_found": "Compared total_listings field in projects dataset against aggregated count of listings per project_id.",
+      "impact": "Displaying project listing count from project object shows wrong availability to buyers.",
+      "evidence": [
+        "P30003",
+        "P30004",
+        "P30006",
+        "P30007",
+        "P30008",
+        "P30009",
+        "P30010",
+        "P30011",
+        "P30012",
+        "P30013"
+      ]
+    },
+    {
+      "endpoint": "/v1/listings",
+      "category": "data_quality",
+      "documented": "Returns active sale listings. Every listing_id is globally unique, and each listing corresponds to exactly one physical property.",
+      "actual": "Contains 35 listing records with physically impossible data including negative prices, floor > total_floors, carpet_area > super_built_up_area, zero bedroom/bathroom in residential units, and inverted/swapped lat/lon coordinates.",
+      "how_found": "Audited dataset fields for physical constraints.",
+      "impact": "Corrupt listings corrupt financial averages and layout metrics if not filtered out.",
+      "evidence": [
+        "100-3000174",
+        "100-3000236",
+        "100-3000608",
+        "100-3001067",
+        "100-3001543",
+        "100-3001548",
+        "100-3002344",
+        "100-3003022",
+        "DWE-3000235",
+        "DWE-3000299",
+        "DWE-3001307",
+        "DWE-3001395",
+        "DWE-3001835",
+        "DWE-3001849",
+        "DWE-3003186",
+        "MAG-3000020",
+        "MAG-3000932",
+        "MAG-3001263",
+        "MAG-3001979",
+        "MAG-3001986"
+      ]
+    },
+    {
+      "endpoint": "/v1/listings",
+      "category": "fraud",
+      "documented": "Returns genuine active sale listings.",
+      "actual": "Contains fake/bait listings with monthly rental prices (e.g., ₹7,910 to ₹17,510) listed as sale prices for 2BHK/3BHK apartments to generate fake buyer inquiries.",
+      "how_found": "Filtered sale listings with residential property types having sale prices under ₹100,000.",
+      "impact": "Misleads users regarding property sale prices and skew price analytics.",
+      "evidence": [
+        "100-3001372",
+        "100-3002878",
+        "MAG-3000012",
+        "MAG-3001311",
+        "MAG-3001932",
+        "SQU-3000349",
+        "ZER-3000796"
+      ]
+    },
+    {
+      "endpoint": "/v1/rentals",
+      "category": "consistency",
+      "documented": "locality field contains the property locality.",
+      "actual": "Rental records have locality field set to one locality (e.g., 'wakad') while the listing title explicitly states a different locality (e.g., 'in Magarpatta', 'in Kharadi').",
+      "how_found": "Cross-referenced title string locality against locality field in /v1/rentals dataset.",
+      "impact": "Filtering rentals by locality field includes properties physically located in other localities.",
+      "evidence": [
+        "R3000592",
+        "R3000609",
+        "R3000614",
+        "R3000617",
+        "R3000620",
+        "R3000652",
+        "R3000655",
+        "R3000657",
+        "R3000682",
+        "R3000684"
+      ]
+    }
+  ]
+}
